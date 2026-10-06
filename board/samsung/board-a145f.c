@@ -146,45 +146,68 @@ static void ring_print_line(const struct ring *r, unsigned long p, unsigned long
 }
 
 /*
- * Show where a crash starts. The kernel's panic output comes from one task
- * (e.g. "irq/125-tzasc"), so the first line of the final run of lines from
- * that task is the real error message; the lines before it are context.
- * Falls back to the plain tail when no such run is found.
+ * Show where a crash starts. A TZASC (TrustZone address controller) fault is
+ * reported by its own irq thread ("irq/NNN-tzasc"), which only ever logs when
+ * something went wrong, and the panic dump after it can be hundreds of lines.
+ * So jump to the FIRST line anywhere in the log that mentions it and show a
+ * few lines before and after. Falls back to the plain tail.
  */
-#define WIN_BACK	300
-#define WIN_BEFORE	3
-#define WIN_AFTER	9
+#define WIN_BEFORE	6
+#define WIN_AFTER	6
+
+/* pass 0: only the irq thread (logs only on a fault); pass 1: looser words */
+static int line_is_fault(const struct ring *r, unsigned long p, unsigned long end,
+			 int pass)
+{
+	if (pass == 0)
+		return ring_line_has(r, p, end, "-tzasc:");
+	return ring_line_has(r, p, end, "TZASC") ||
+	       ring_line_has(r, p, end, "tzasc_");
+}
 
 static void ring_crash_window(const struct ring *r)
 {
-	unsigned long starts[WIN_BACK], n = 0, pos, end = r->len, j, first, from, to;
-	const char *key = "irq/";	/* panic comes from an irq thread */
-	int found = 0;
+	unsigned long before[WIN_BEFORE], nb = 0, p = 0, end = r->len, q, i, hit = 0;
+	int found = 0, pass;
 
 	if (end && ring_at(r, end - 1) == '\n')
 		end--;
-	for (pos = end; pos > 0 && n < WIN_BACK; pos--)
-		if (ring_at(r, pos - 1) == '\n')
-			starts[n++] = pos;
-	if (n < WIN_BACK)
-		starts[n++] = 0;
-	/* starts[0] = last line ... starts[n-1] = oldest. Walk back from the end
-	 * while lines carry the key; the oldest of that run is the error line. */
-	first = 0;
-	for (j = 0; j < n; j++) {
-		if (!ring_line_has(r, starts[j], end, key))
-			break;
-		first = j;
-		found = 1;
+	for (pass = 0; pass < 2 && !found; pass++) {
+		nb = 0;
+		p = 0;
+		while (p < end) {
+			if (line_is_fault(r, p, end, pass)) {
+				found = 1;
+				hit = p;
+				break;
+			}
+			/* remember this line start, keep the last WIN_BEFORE */
+			if (nb < WIN_BEFORE) {
+				before[nb++] = p;
+			} else {
+				for (i = 1; i < WIN_BEFORE; i++)
+					before[i - 1] = before[i];
+				before[WIN_BEFORE - 1] = p;
+			}
+			while (p < end && ring_at(r, p) != '\n')
+				p++;
+			p++;
+		}
 	}
 	if (!found) {
 		ring_tail(r);
 		return;
 	}
-	from = first + WIN_BEFORE < n ? first + WIN_BEFORE : n - 1;
-	to = first >= WIN_AFTER ? first - WIN_AFTER : 0;
-	for (j = from + 1; j-- > to;)
-		ring_print_line(r, starts[j], end);
+	for (i = 0; i < nb; i++)
+		ring_print_line(r, before[i], end);
+	printk(KERN_INFO, ">>> first fault line:\n");
+	q = hit;
+	for (i = 0; i <= WIN_AFTER && q < end; i++) {
+		ring_print_line(r, q, end);
+		while (q < end && ring_at(r, q) != '\n')
+			q++;
+		q++;
+	}
 }
 
 static void show_ramoops(void)
