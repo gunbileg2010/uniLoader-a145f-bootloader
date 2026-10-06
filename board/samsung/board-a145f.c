@@ -33,16 +33,42 @@ static const struct device a145f_devices[] = {
 
 #ifdef CONFIG_A145F_SHOW_PREV_LOG
 /*
- * Bring-up aid: Samsung's debug-snapshot driver mirrors the kernel console
- * into a reserved RAM area ("log_kernel" in the device tree). It survives a
- * warm reboot, so after a failed boot we show the tail of the previous boot's
- * kernel log on screen before booting again. The text starts at the base of
- * the region; unused space is zero.
+ * Bring-up aid, shown on screen before booting again after a failed boot.
+ * DRAM survives a warm reset, so two RAM areas are inspected:
+ *
+ *  1. "ramoops": a 1 MiB reserved area that make_a145f_blobs.py adds to the
+ *     device tree. The kernel's pstore console writes everything it prints
+ *     there from early boot on, which is the kernel's own log.
+ *  2. "log_kernel": the debug-snapshot area at 0xf0010000. In practice it
+ *     holds the stock bootloader's log (ends at "Starting kernel...").
  */
-#define RAMLOG_BASE	0xf0010000UL
-#define RAMLOG_SIZE	0x200000UL
-#define RAMLOG_LINES	38
-#define RAMLOG_COLS	96
+#define RAMOOPS_BASE	0x8ff00000UL
+#define RAMOOPS_SIZE	0x100000UL
+#define RAMOOPS_CON	(RAMOOPS_BASE + 0x80000UL)	/* console zone */
+#define RAMOOPS_CON_SZ	0x80000UL
+#define PRZ_SIG		0x43474244U			/* "DBGC" */
+#define PRZ_HDR		12UL
+
+#define BLLOG_BASE	0xf0010000UL
+#define BLLOG_SIZE	0x200000UL
+
+#define SHOW_LINES	12
+#define SHOW_COLS	90
+#define HOLD_SECONDS	20
+
+struct ring {
+	const volatile unsigned char *p;
+	unsigned long bufsz;	/* ring size */
+	unsigned long off;	/* index of oldest byte */
+	unsigned long len;	/* valid bytes */
+};
+
+static inline unsigned char ring_at(const struct ring *r, unsigned long i)
+{
+	unsigned long k = r->off + i;
+
+	return r->p[k >= r->bufsz ? k % r->bufsz : k];
+}
 
 static void delay_seconds(unsigned int s)
 {
@@ -57,13 +83,123 @@ static void delay_seconds(unsigned int s)
 	} while (now - start < freq * s);
 }
 
+/* Print the last SHOW_LINES lines of a ring, long lines truncated. */
+static void ring_tail(const struct ring *r)
+{
+	unsigned long starts[SHOW_LINES], nlines = 0, pos, n, p;
+	unsigned long end = r->len;
+	char line[SHOW_COLS + 1];
+
+	if (end && ring_at(r, end - 1) == '\n')
+		end--;
+	for (pos = end; pos > 0 && nlines < SHOW_LINES; pos--)
+		if (ring_at(r, pos - 1) == '\n')
+			starts[nlines++] = pos;
+	if (nlines < SHOW_LINES)
+		starts[nlines++] = 0;
+
+	while (nlines--) {
+		n = 0;
+		p = starts[nlines];
+		while (p < end && n < SHOW_COLS) {
+			unsigned char c = ring_at(r, p++);
+
+			if (c == '\n')
+				break;
+			line[n++] = (c >= 32 && c < 127) ? c : '.';
+		}
+		line[n] = 0;
+		printk(KERN_INFO, "%s\n", line);
+	}
+}
+
+static void show_ramoops(void)
+{
+	const volatile unsigned int *h = (const volatile unsigned int *)RAMOOPS_CON;
+	unsigned long z;
+	struct ring r;
+	unsigned int sig = h[0], start = h[1], size = h[2];
+	unsigned long bufsz = RAMOOPS_CON_SZ - PRZ_HDR;
+
+	if (sig != PRZ_SIG) {
+		printk(KERN_INFO, "ramoops: no kernel log (sig=%x, expected %x)\n",
+		       sig, PRZ_SIG);
+		/* list any zone that does carry a signature */
+		for (z = 0; z < RAMOOPS_SIZE; z += 0x20000) {
+			const volatile unsigned int *zh =
+				(const volatile unsigned int *)(RAMOOPS_BASE + z);
+
+			if (zh[0] == PRZ_SIG)
+				printk(KERN_INFO, "ramoops: zone +%x has sig, size=%x\n",
+				       (unsigned int)z, zh[2]);
+		}
+		return;
+	}
+	if (size > bufsz || start >= bufsz || !size) {
+		printk(KERN_INFO, "ramoops: bad header start=%x size=%x\n",
+		       start, size);
+		return;
+	}
+	r.p = (const volatile unsigned char *)(RAMOOPS_CON + PRZ_HDR);
+	r.bufsz = bufsz;
+	r.len = size;
+	r.off = (start + bufsz - size) % bufsz;	/* oldest byte */
+	printk(KERN_INFO, "KERNEL LOG (ramoops, %d bytes), last lines:\n", (int)size);
+	ring_tail(&r);
+	printk(KERN_INFO, "--- end of kernel log, holding %ds ---\n", HOLD_SECONDS);
+	delay_seconds(HOLD_SECONDS);
+}
+
+static void show_bootloader_log(void)
+{
+	const volatile unsigned char *log = (const volatile unsigned char *)BLLOG_BASE;
+	unsigned long i, end = 0, text = 0, nonzero = 0;
+	struct ring r;
+
+	for (i = 0; i < 4096; i++) {
+		if (!log[i])
+			continue;
+		nonzero++;
+		if ((log[i] >= 32 && log[i] < 127) || log[i] == '\n')
+			text++;
+	}
+	if (nonzero < 64 || text * 100 < nonzero * 90) {
+		printk(KERN_INFO, "log_kernel: empty\n");
+		return;
+	}
+	for (i = 0; i < BLLOG_SIZE; i++)
+		if (log[i])
+			end = i + 1;
+
+	/* raw view of the last 48 bytes, so odd data is readable */
+	printk(KERN_INFO, "log_kernel: %d bytes, last 48 raw:\n", (int)end);
+	for (i = end > 48 ? end - 48 : 0; i < end; i += 16) {
+		unsigned long j, m = end - i < 16 ? end - i : 16;
+		char hex[16 * 3 + 1];
+		static const char d[] = "0123456789abcdef";
+
+		for (j = 0; j < m; j++) {
+			hex[j * 3] = d[log[i + j] >> 4];
+			hex[j * 3 + 1] = d[log[i + j] & 15];
+			hex[j * 3 + 2] = ' ';
+		}
+		hex[m * 3] = 0;
+		printk(KERN_INFO, "%x: %s\n", (unsigned int)i, hex);
+	}
+	/* keep the text view short: this is the bootloader's log */
+	r.p = log;
+	r.bufsz = BLLOG_SIZE;
+	r.off = 0;
+	for (i = end; i > 0 && log[i - 1] < 32 && log[i - 1] != '\n'; i--)
+		;
+	r.len = i;
+	printk(KERN_INFO, "log_kernel text tail:\n");
+	ring_tail(&r);
+}
+
 static int a145f_late_init(void)
 {
-	const volatile unsigned char *log = (const volatile unsigned char *)RAMLOG_BASE;
-	unsigned long end = 0, i, pos, nlines = 0, el, sctlr;
-	unsigned long text = 0, nonzero = 0, probe = 4096;
-	unsigned long starts[RAMLOG_LINES];
-	char line[RAMLOG_COLS + 1];
+	unsigned long el, sctlr;
 
 	/* CPU state at hand-off: useful when a kernel does not come up. */
 	__asm__ volatile("mrs %0, CurrentEL" : "=r"(el));
@@ -76,49 +212,9 @@ static int a145f_late_init(void)
 	       (unsigned int)sctlr, (sctlr & 1) ? "on" : "off",
 	       (sctlr & 4) ? "on" : "off");
 
-	/* Is there readable text from a previous boot? */
-	for (i = 0; i < probe; i++) {
-		if (!log[i])
-			continue;
-		nonzero++;
-		if ((log[i] >= 32 && log[i] < 127) || log[i] == '\n')
-			text++;
-	}
-	/* real text is >90% readable; random RAM garbage is not */
-	if (nonzero < 64 || text * 100 < nonzero * 90) {
-		printk(KERN_INFO, "previous kernel log: none (RAM log empty)\n");
-		return 0;
-	}
-
-	/* Last non-zero byte = end of what the kernel wrote. */
-	for (i = 0; i < RAMLOG_SIZE; i++)
-		if (log[i])
-			end = i + 1;
-
-	/* Remember where the last RAMLOG_LINES lines start. */
-	for (pos = end; pos > 0 && nlines < RAMLOG_LINES; pos--) {
-		if (pos == end && log[pos - 1] == '\n')
-			continue;
-		if (log[pos - 1] == '\n') {
-			starts[nlines++] = pos;
-		}
-	}
-	if (nlines < RAMLOG_LINES)
-		starts[nlines++] = 0;
-
-	printk(KERN_INFO, "previous kernel log (%d bytes), last lines:\n", (int)end);
-	while (nlines--) {
-		unsigned long n = 0, p = starts[nlines];
-
-		while (p < end && log[p] != '\n' && n < RAMLOG_COLS) {
-			unsigned char c = log[p++];
-
-			line[n++] = (c >= 32 && c < 127) ? c : '.';
-		}
-		line[n] = 0;
-		printk(KERN_INFO, "%s\n", line);
-	}
-	printk(KERN_INFO, "--- end of previous log, continuing in 10s ---\n");
+	show_ramoops();
+	show_bootloader_log();
+	printk(KERN_INFO, "--- continuing in 10s ---\n");
 	delay_seconds(10);
 	return 0;
 }
