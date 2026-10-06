@@ -183,6 +183,23 @@ menu "Device Support"
 		help
 		  Say Y if you want to include support for Samsung Galaxy A12 Nacho
 
+	config SAMSUNG_A145F
+		bool "Support for Samsung Galaxy A14 4G"
+		default n
+		depends on EXYNOS_3830
+		help
+		  Say Y if you want to include support for the Samsung Galaxy A14 4G
+		  variant running the Exynos 850 platform.
+
+	config A145F_SHOW_PREV_LOG
+		bool "A145F: show the previous boot's kernel log on screen"
+		default y
+		depends on SAMSUNG_A145F
+		help
+		  Bring-up aid. After a failed boot, shows the kernel's own log from
+		  the ramoops area and the bootloader's log, then waits before
+		  booting again. Costs about 50 s per boot when a log is present.
+
 	config SAMSUNG_A21S
 		bool "Support for Samsung Galaxy A21S"
 		default n
@@ -432,16 +449,19 @@ menu "Device Specific Addresses"
 
 	config TEXT_BASE
 		hex "UniLoader Text Base"
+		default 0xa0000000 if SAMSUNG_A145F
 		default 0x0
 
 	config PAYLOAD_ENTRY
 		hex "Payload Entry Address"
 		default 0x50000000 if NOTHING_TETRIS
 		default 0x050000000 if SAMSUNG_J4LTE
+		default 0x80200000 if SAMSUNG_A145F
 		default 0x50000000 if XIAOMI_BEGONIA
 
 	config RAMDISK_ENTRY
 		hex "Ramdisk Entry Address"
 		default 0x40000000 if NOTHING_TETRIS
+		default 0x84000000 if SAMSUNG_A145F
 		default 0x48000000 if XIAOMI_BEGONIA
 endmenu

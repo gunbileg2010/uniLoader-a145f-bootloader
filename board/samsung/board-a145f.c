@@ -42,7 +42,7 @@ static const struct device a145f_devices[] = {
  *  2. "log_kernel": the debug-snapshot area at 0xf0010000. In practice it
  *     holds the stock bootloader's log (ends at "Starting kernel...").
  */
-#define RAMOOPS_BASE	0x8ff00000UL
+#define RAMOOPS_BASE	0x8fe00000UL
 #define RAMOOPS_SIZE	0x100000UL
 #define RAMOOPS_CON	(RAMOOPS_BASE + 0x80000UL)	/* console zone */
 #define RAMOOPS_CON_SZ	0x80000UL
@@ -146,33 +146,44 @@ static void ring_print_line(const struct ring *r, unsigned long p, unsigned long
 }
 
 /*
- * Show where a crash starts. A TZASC (TrustZone address controller) fault is
- * reported by its own irq thread ("irq/NNN-tzasc"), which only ever logs when
- * something went wrong, and the panic dump after it can be hundreds of lines.
- * So jump to the FIRST line anywhere in the log that mentions it and show a
- * few lines before and after. Falls back to the plain tail.
+ * Show where a crash starts. The panic dump can be hundreds of lines, so jump
+ * to the first line anywhere in the log that matches the most specific marker
+ * and show a few lines before and after. Markers are tried in priority order;
+ * the TZASC irq thread only reports a violation (it does not panic by itself),
+ * so it is the last resort. Falls back to the plain tail.
  */
 #define WIN_BEFORE	6
-#define WIN_AFTER	6
+#define WIN_AFTER	12
 
-/* pass 0: only the irq thread (logs only on a fault); pass 1: looser words */
+static const char * const fault_needles[][3] = {
+	{ "Kernel panic - not syncing", NULL, NULL },
+	{ "Unable to handle kernel", "Internal error:", "Oops" },
+	{ "BUG:", "Bad mode in", "SError" },
+	{ "-tzasc:", "TZASC FAIL", NULL },
+};
+#define NUM_NEEDLE_PASSES (sizeof(fault_needles) / sizeof(fault_needles[0]))
+
 static int line_is_fault(const struct ring *r, unsigned long p, unsigned long end,
-			 int pass)
+			 unsigned int pass)
 {
-	if (pass == 0)
-		return ring_line_has(r, p, end, "-tzasc:");
-	return ring_line_has(r, p, end, "TZASC") ||
-	       ring_line_has(r, p, end, "tzasc_");
+	unsigned int k;
+
+	for (k = 0; k < 3; k++)
+		if (fault_needles[pass][k] &&
+		    ring_line_has(r, p, end, fault_needles[pass][k]))
+			return 1;
+	return 0;
 }
 
 static void ring_crash_window(const struct ring *r)
 {
 	unsigned long before[WIN_BEFORE], nb = 0, p = 0, end = r->len, q, i, hit = 0;
-	int found = 0, pass;
+	int found = 0;
+	unsigned int pass;
 
 	if (end && ring_at(r, end - 1) == '\n')
 		end--;
-	for (pass = 0; pass < 2 && !found; pass++) {
+	for (pass = 0; pass < NUM_NEEDLE_PASSES && !found; pass++) {
 		nb = 0;
 		p = 0;
 		while (p < end) {
@@ -200,7 +211,7 @@ static void ring_crash_window(const struct ring *r)
 	}
 	for (i = 0; i < nb; i++)
 		ring_print_line(r, before[i], end);
-	printk(KERN_INFO, ">>> first fault line:\n");
+	printk(KERN_INFO, ">>> first match (pass %d):\n", (int)(pass - 1));
 	q = hit;
 	for (i = 0; i <= WIN_AFTER && q < end; i++) {
 		ring_print_line(r, q, end);
