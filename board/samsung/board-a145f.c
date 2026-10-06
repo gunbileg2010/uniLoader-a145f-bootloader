@@ -54,7 +54,7 @@ static const struct device a145f_devices[] = {
 
 #define SHOW_LINES	12
 #define SHOW_COLS	90
-#define HOLD_SECONDS	20
+#define HOLD_SECONDS	40
 
 struct ring {
 	const volatile unsigned char *p;
@@ -113,6 +113,80 @@ static void ring_tail(const struct ring *r)
 	}
 }
 
+
+static int ring_line_has(const struct ring *r, unsigned long p, unsigned long end,
+			 const char *needle)
+{
+	unsigned long i, k;
+
+	for (; p < end && ring_at(r, p) != '\n'; p++) {
+		for (i = p, k = 0; needle[k] && i < end &&
+		     ring_at(r, i) == (unsigned char)needle[k]; i++, k++)
+			;
+		if (!needle[k])
+			return 1;
+	}
+	return 0;
+}
+
+static void ring_print_line(const struct ring *r, unsigned long p, unsigned long end)
+{
+	char line[SHOW_COLS + 1];
+	unsigned long n = 0;
+
+	while (p < end && n < SHOW_COLS) {
+		unsigned char c = ring_at(r, p++);
+
+		if (c == '\n')
+			break;
+		line[n++] = (c >= 32 && c < 127) ? c : '.';
+	}
+	line[n] = 0;
+	printk(KERN_INFO, "%s\n", line);
+}
+
+/*
+ * Show where a crash starts. The kernel's panic output comes from one task
+ * (e.g. "irq/125-tzasc"), so the first line of the final run of lines from
+ * that task is the real error message; the lines before it are context.
+ * Falls back to the plain tail when no such run is found.
+ */
+#define WIN_BACK	300
+#define WIN_BEFORE	3
+#define WIN_AFTER	9
+
+static void ring_crash_window(const struct ring *r)
+{
+	unsigned long starts[WIN_BACK], n = 0, pos, end = r->len, j, first, from, to;
+	const char *key = "irq/";	/* panic comes from an irq thread */
+	int found = 0;
+
+	if (end && ring_at(r, end - 1) == '\n')
+		end--;
+	for (pos = end; pos > 0 && n < WIN_BACK; pos--)
+		if (ring_at(r, pos - 1) == '\n')
+			starts[n++] = pos;
+	if (n < WIN_BACK)
+		starts[n++] = 0;
+	/* starts[0] = last line ... starts[n-1] = oldest. Walk back from the end
+	 * while lines carry the key; the oldest of that run is the error line. */
+	first = 0;
+	for (j = 0; j < n; j++) {
+		if (!ring_line_has(r, starts[j], end, key))
+			break;
+		first = j;
+		found = 1;
+	}
+	if (!found) {
+		ring_tail(r);
+		return;
+	}
+	from = first + WIN_BEFORE < n ? first + WIN_BEFORE : n - 1;
+	to = first >= WIN_AFTER ? first - WIN_AFTER : 0;
+	for (j = from + 1; j-- > to;)
+		ring_print_line(r, starts[j], end);
+}
+
 static void show_ramoops(void)
 {
 	const volatile unsigned int *h = (const volatile unsigned int *)RAMOOPS_CON;
@@ -144,8 +218,8 @@ static void show_ramoops(void)
 	r.bufsz = bufsz;
 	r.len = size;
 	r.off = (start + bufsz - size) % bufsz;	/* oldest byte */
-	printk(KERN_INFO, "KERNEL LOG (ramoops, %d bytes), last lines:\n", (int)size);
-	ring_tail(&r);
+	printk(KERN_INFO, "KERNEL LOG (ramoops, %d bytes), crash start:\n", (int)size);
+	ring_crash_window(&r);
 	printk(KERN_INFO, "--- end of kernel log, holding %ds ---\n", HOLD_SECONDS);
 	delay_seconds(HOLD_SECONDS);
 }
