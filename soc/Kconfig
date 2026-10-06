@@ -146,24 +146,12 @@ config SONY
 		select MEDIATEK
 		help
 		  Say Y if your device uses Mediatek MT6765 SoC
-	
-	config MT6768
-		bool "Support for Mediatek MT6768"
-		select MEDIATEK
-		help
-		  Say Y if your device uses Mediatek MT6768 SoC
 
 	config MT6785
 		bool "Support for Mediatek MT6785"
 		select MEDIATEK
 		help
 		  Say Y if your device uses Mediatek MT6785 SoC
-		  
-	config MT6789
-		bool "Support for Mediatek MT6789"
-		select MEDIATEK
-		help
-		  Say Y if your device uses Mediatek MT6789 SoC
 	
 	config MT6833
 		bool "Support for Mediatek MT6833"
@@ -195,35 +183,11 @@ config SONY
 		help
 		  Say Y if your device uses Mediatek MT6897 SoC
 
-	config MT8163
-		bool "Support for MediaTek MT8163"
-		select MEDIATEK
-		help
-		  Say Y if your device uses MediaTek MT8163 SoC
-
 	config QC32_8916
 		bool "Support for QUALCOMM MSM8916"
 		select QUALCOMM
 		help
 		  Say Y if your device uses this Qualcomm SoC
-
-	config SM6125
-		bool "Support for QUALCOMM SM6125"
-		select QUALCOMM
-		help
-		  Say Y if your device uses this Qualcomm SoC
-
-	config SM7150
-		bool "Support for QUALCOMM SM7150"
-		select QUALCOMM
-		help
-		 Say Y if your device uses this Qualcomm SoC
-
-	config SM7325
-		bool "Support for QUALCOMM SM7325"
-		select QUALCOMM
-		help
-		 Say Y if your device uses this Qualcomm SoC
 
 	config SM8350
 		bool "Support for QUALCOMM SM8350"
@@ -239,16 +203,6 @@ config SONY
 
 	config SM8650
 		bool "Support for QUALCOMM SM8650"
-		select QUALCOMM
-		help
-		  Say Y if your device uses this Qualcomm SoC
-
-		  WARNING: Due to Gunyah being used on this platform,
-		  stability is not guaranteed when booting mainline.
-		  It should be treated as a PoC SoC.
-
-	config SM8850
-		bool "Support for QUALCOMM SM8850"
 		select QUALCOMM
 		help
 		  Say Y if your device uses this Qualcomm SoC
@@ -281,12 +235,6 @@ config SONY
 		select UNISOC
 		help
 		  Say Y if your device uses UNISOC UMS9230
-
-	config UMS9620
-		bool "Support for Unisoc T760/T820"
-		select UNISOC
-		help
-		  Say Y if your device uses UNISOC UMS9620
 
 	config SONY_KERMIT
 		bool "Support for Sony Kermit SoC"

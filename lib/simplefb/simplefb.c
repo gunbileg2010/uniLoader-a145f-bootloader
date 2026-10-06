@@ -23,22 +23,11 @@ static void clean_fbmem(void *fb, int width, int height, int stride)
 static void draw_pixel(volatile char *fb, int x, int y, int width, int stride,
 		       color c)
 {
-	long int location;
-
 	// Check bounds to prevent drawing outside the framebuffer
 	if (x < 0 || x >= width || y < 0 || y >= fb_info->height)
 		return;
 
-	if (fb_info->rotate == 1) {
-		int phys_width = fb_info->height;
-		int px = (fb_info->height - 1) - y;
-		int py = x;
-
-		location = (px * stride) + (py * phys_width * stride);
-	} else {
-		location = (x * stride) + (y * width * stride);
-	}
-
+	long int location = (x * stride) + (y * width * stride);
 	switch (fb_info->format) {
 	case FB_FORMAT_ARGB8888:
 		*(fb + location) = c.b;
@@ -74,7 +63,7 @@ static void draw_pixel(volatile char *fb, int x, int y, int width, int stride,
 #define SCALED_FONTW (FONTW * fb_info->scale_f)
 #define SCALED_FONTH (FONTH * fb_info->scale_f)
 
-int get_font_scale_factor(void)
+int get_font_scale_factor()
 {
 	if (!fb_info)
 		return 1;

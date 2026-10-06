@@ -2,13 +2,86 @@
 
 **uniLoader** is a minimalistic loader, capable of booting Linux kernels.
 It can be used as an intermediate bootloader, providing a clean booting
-environment in case of a forced and buggy bootloader.
+environment in case of a forced and buggy bootloader. and this is in a work in progress
 
 ---
 
 ## Supported Architectures
 - ARMv7
 - ARMv8
+
+---
+
+## Supported Devices
+
+### Apple
+- N61AP
+
+### Amazon
+- PW3
+
+### Blackview
+- Tab15Pro
+
+### Google
+- Taimen
+
+### Huawei
+- Agassi2
+
+### itel
+- P682LPN
+
+### Infinix
+- X6710
+
+### Nokia
+- Essential
+
+### Nothing
+- Tetris
+
+### QEMU
+- Virt
+
+### Realme
+- RMX3511
+
+### Samsung
+- A3XELTE
+- A10
+- A12S
+- A30
+- A33X
+- A14 4g (sm-a145f) - see Documentation/samsung-a145f.md
+- BEYOND1LTE
+- C1S
+- DREAMLTE
+- G0S
+- GTA4XL
+- HEROLTE
+- J4LTE
+- J5LTE
+- JACKPOTLTE
+- LUCKY7
+- NOBLELTE
+- R0Q
+- R8S
+- STARLTE
+- X1S
+- ZEROFLTE
+
+### Sony
+- PDX245
+- PSVITA
+
+### Volla
+- Algiz
+
+### Xiaomi
+- Begonia
+- Blossom
+- Camellia
 
 ---
 

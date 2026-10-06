@@ -14,15 +14,8 @@ extern struct board_data board_ops;
 
 static void print_splash(void)
 {
-	printk(KERN_INFO, "             .__.____                     .___\n");
-	printk(KERN_INFO, " __ __  ____ |__|    |    _________     __| _/___________\n");
-	printk(KERN_INFO, "|  |  \\/    \\|  |    |   /  _ \\__  \\   / __ |/ __ \\_  __\\\n");
-	printk(KERN_INFO, "|  |  /   |  \\  |    |__(  <_> ) __ \\_/ /_/ \\  ___/|  |\\/\n");
-	printk(KERN_INFO, "|____/|___|  /__|_______ \\____(____  /\\____ |\\___  >__|\n");
-	printk(KERN_INFO, "           \\/           \\/         \\/      \\/    \\/\n");
-
 	printk(KERN_INFO, "passed board initialization\n");
-	printk(KERN_INFO, "welcome to uniLoader %s on %s\n", VER_TAG, board_ops.name);
+	printk(KERN_INFO, "finally booted into bootloader %s on %s\n", VER_TAG, board_ops.name);
 }
 
 void main(void* dt, void* kernel, void* ramdisk)

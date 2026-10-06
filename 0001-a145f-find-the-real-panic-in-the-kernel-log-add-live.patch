@@ -1,0 +1,222 @@
+find the real panic in the kernel log, add --live-dtb
+
+- crash view: search for 'Kernel panic - not syncing' first, then oops/BUG
+  markers, then TZASC lines (the TZASC driver only reports, it does not
+  panic by itself); show 12 lines after the match
+- make_a145f_blobs.py: --live-dtb uses the bootloader-patched tree from
+  stock (/sys/firmware/fdt), skips duplicate bootargs, warns if the ramoops
+  area overlaps a reserved region
+- a145f-capture-live-dtb.sh: dump that tree plus iomem and cmdline over adb
+---
+ Documentation/samsung-a145f.md                | 22 ++++++++++
+ board/samsung/board-a145f.c                   | 41 ++++++++++++-------
+ tools/samsung-a145f/a145f-capture-live-dtb.sh | 15 +++++++
+ tools/samsung-a145f/make_a145f_blobs.py       | 41 +++++++++++++++----
+ 4 files changed, 95 insertions(+), 24 deletions(-)
+ create mode 100755 tools/samsung-a145f/a145f-capture-live-dtb.sh
+
+diff --git a/Documentation/samsung-a145f.md b/Documentation/samsung-a145f.md
+index 90d3a2e..4544c1e 100644
+--- a/Documentation/samsung-a145f.md
++++ b/Documentation/samsung-a145f.md
+@@ -143,3 +143,25 @@ previous boot left in RAM the next time it starts (DRAM survives the reset):
+ early crash) or the RAM was cleared; the sig value printed helps tell which.
+ The `log_kernel` area at `0xf0010000` holds the *bootloader's* log (it ends at
+ "Starting kernel..."), not Linux's.
++
++## 9. Using the bootloader-patched device tree (`--live-dtb`)
++
++Samsung's bootloader patches the device tree before the kernel sees it
++(reserved-memory addresses, memory size, board fields). uniLoader does not, and
++a static tree can make the kernel use memory that TrustZone protects, which
++shows up as a TZASC interrupt followed by a panic a few seconds into boot.
++
++With the **stock** boot.img restored and a root shell, capture the real tree:
++
++```
++tools/samsung-a145f/a145f-capture-live-dtb.sh live-dtb
++python3 tools/samsung-a145f/make_a145f_blobs.py ... --live-dtb live-dtb/stock_live.dtb --out blob
++```
++
++The script keeps the live tree as is, adds the bring-up bootargs that are not
++already there, adds the ramoops node (and warns if it overlaps a reserved
++region), and leaves `/chosen/linux,initrd-*` for uniLoader to rewrite.
++Untested on hardware.
++
++The on-screen crash view now searches for `Kernel panic - not syncing` first,
++then oops/BUG markers, and only then TZASC lines.
+diff --git a/board/samsung/board-a145f.c b/board/samsung/board-a145f.c
+index a318375..7d0f649 100644
+--- a/board/samsung/board-a145f.c
++++ b/board/samsung/board-a145f.c
+@@ -146,33 +146,44 @@ static void ring_print_line(const struct ring *r, unsigned long p, unsigned long
+ }
+ 
+ /*
+- * Show where a crash starts. A TZASC (TrustZone address controller) fault is
+- * reported by its own irq thread ("irq/NNN-tzasc"), which only ever logs when
+- * something went wrong, and the panic dump after it can be hundreds of lines.
+- * So jump to the FIRST line anywhere in the log that mentions it and show a
+- * few lines before and after. Falls back to the plain tail.
++ * Show where a crash starts. The panic dump can be hundreds of lines, so jump
++ * to the first line anywhere in the log that matches the most specific marker
++ * and show a few lines before and after. Markers are tried in priority order;
++ * the TZASC irq thread only reports a violation (it does not panic by itself),
++ * so it is the last resort. Falls back to the plain tail.
+  */
+ #define WIN_BEFORE	6
+-#define WIN_AFTER	6
++#define WIN_AFTER	12
++
++static const char * const fault_needles[][3] = {
++	{ "Kernel panic - not syncing", NULL, NULL },
++	{ "Unable to handle kernel", "Internal error:", "Oops" },
++	{ "BUG:", "Bad mode in", "SError" },
++	{ "-tzasc:", "TZASC FAIL", NULL },
++};
++#define NUM_NEEDLE_PASSES (sizeof(fault_needles) / sizeof(fault_needles[0]))
+ 
+-/* pass 0: only the irq thread (logs only on a fault); pass 1: looser words */
+ static int line_is_fault(const struct ring *r, unsigned long p, unsigned long end,
+-			 int pass)
++			 unsigned int pass)
+ {
+-	if (pass == 0)
+-		return ring_line_has(r, p, end, "-tzasc:");
+-	return ring_line_has(r, p, end, "TZASC") ||
+-	       ring_line_has(r, p, end, "tzasc_");
++	unsigned int k;
++
++	for (k = 0; k < 3; k++)
++		if (fault_needles[pass][k] &&
++		    ring_line_has(r, p, end, fault_needles[pass][k]))
++			return 1;
++	return 0;
+ }
+ 
+ static void ring_crash_window(const struct ring *r)
+ {
+ 	unsigned long before[WIN_BEFORE], nb = 0, p = 0, end = r->len, q, i, hit = 0;
+-	int found = 0, pass;
++	int found = 0;
++	unsigned int pass;
+ 
+ 	if (end && ring_at(r, end - 1) == '\n')
+ 		end--;
+-	for (pass = 0; pass < 2 && !found; pass++) {
++	for (pass = 0; pass < NUM_NEEDLE_PASSES && !found; pass++) {
+ 		nb = 0;
+ 		p = 0;
+ 		while (p < end) {
+@@ -200,7 +211,7 @@ static void ring_crash_window(const struct ring *r)
+ 	}
+ 	for (i = 0; i < nb; i++)
+ 		ring_print_line(r, before[i], end);
+-	printk(KERN_INFO, ">>> first fault line:\n");
++	printk(KERN_INFO, ">>> first match (pass %d):\n", (int)(pass - 1));
+ 	q = hit;
+ 	for (i = 0; i <= WIN_AFTER && q < end; i++) {
+ 		ring_print_line(r, q, end);
+diff --git a/tools/samsung-a145f/a145f-capture-live-dtb.sh b/tools/samsung-a145f/a145f-capture-live-dtb.sh
+new file mode 100755
+index 0000000..cd3055d
+--- /dev/null
++++ b/tools/samsung-a145f/a145f-capture-live-dtb.sh
+@@ -0,0 +1,15 @@
++#!/bin/sh
++# Dump the device tree Samsung's bootloader handed to the running STOCK kernel.
++# Boot stock Android first (restore the stock boot.img), root shell needed.
++#   ./a145f-capture-live-dtb.sh [outdir]
++set -e
++out="${1:-live-dtb}"; mkdir -p "$out"
++adb get-state >/dev/null
++adb exec-out su -c "cat /sys/firmware/fdt" > "$out/stock_live.dtb"
++adb exec-out su -c "cat /proc/iomem"       > "$out/iomem.txt"
++adb exec-out su -c "cat /proc/cmdline"     > "$out/cmdline.txt"
++sz=$(stat -c %s "$out/stock_live.dtb")
++magic=$(head -c4 "$out/stock_live.dtb" | od -An -tx1 | tr -d ' \n')
++[ "$magic" = "d00dfeed" ] || { echo "not a device tree (magic $magic): is su allowed?"; exit 1; }
++echo "stock_live.dtb: $sz bytes"
++echo "next: make_a145f_blobs.py ... --live-dtb $out/stock_live.dtb --out blob"
+diff --git a/tools/samsung-a145f/make_a145f_blobs.py b/tools/samsung-a145f/make_a145f_blobs.py
+index 33e00a0..8875061 100755
+--- a/tools/samsung-a145f/make_a145f_blobs.py
++++ b/tools/samsung-a145f/make_a145f_blobs.py
+@@ -88,14 +88,32 @@ def add_ramoops(dtb):
+                  ("ftrace-size", 0), ("pmsg-size", 0)):
+         run("-t", "x", dtb, n, k, f"{v:x}")
+ 
+-def build_dtb(vb_dtb, dtbo_path, idx, getprop):
+-    i = vb_dtb.find(b"\xd0\x0d\xfe\xed")
+-    if i < 0: die("vendor_boot dtb section has no device tree")
+-    base = vb_dtb[i:i + struct.unpack(">I", vb_dtb[i + 4:i + 8])[0]]
++def check_ramoops_overlap(dtb_path):
++    """Warn if a reserved-memory region in this tree overlaps the ramoops area."""
++    dts = subprocess.run(["dtc", "-I", "dtb", "-O", "dts", dtb_path],
++                         capture_output=True, text=True).stdout
++    lo, hi = 0x8ff00000, 0x90000000
++    m = re.search(r"reserved-memory \{(.*?)\n\t\};", dts, re.S)   # not the /memory nodes
++    dts = m.group(1) if m else ""
++    for hi_a, lo_a, sz in re.findall(r"reg = <0x([0-9a-f]+) 0x([0-9a-f]+) 0x([0-9a-f]+)>;", dts):
++        a = (int(hi_a, 16) << 32) | int(lo_a, 16); e = a + int(sz, 16)
++        if int(sz, 16) and a < hi and e > lo:
++            print(f"warning: a region at {a:#x}-{e:#x} overlaps the ramoops area {lo:#x}-{hi:#x}")
++
++def build_dtb(vb_dtb, dtbo_path, idx, getprop, live_dtb=None):
+     with tempfile.TemporaryDirectory() as t:
+         b, o, m = (os.path.join(t, n) for n in ("base", "ov", "merged"))
+-        open(b, "wb").write(base); open(o, "wb").write(overlay(dtbo_path, idx))
+-        subprocess.run(["fdtoverlay", "-i", b, "-o", m, o], check=True)
++        if live_dtb:
++            # The tree Samsung's bootloader produced (adb: cat /sys/firmware/fdt on
++            # stock): already merged with the overlay and patched with the real
++            # reserved-memory addresses, memory size and board fields.
++            open(m, "wb").write(open(live_dtb, "rb").read())
++        else:
++            i = vb_dtb.find(b"\xd0\x0d\xfe\xed")
++            if i < 0: die("vendor_boot dtb section has no device tree")
++            base = vb_dtb[i:i + struct.unpack(">I", vb_dtb[i + 4:i + 8])[0]]
++            open(b, "wb").write(base); open(o, "wb").write(overlay(dtbo_path, idx))
++            subprocess.run(["fdtoverlay", "-i", b, "-o", m, o], check=True)
+         args = subprocess.run(["fdtget", m, "/chosen", "bootargs"],
+                               capture_output=True, text=True, check=True).stdout.strip()
+         props = dict(re.findall(r"\[ro\.boot\.([^\]]+)\]: \[([^\]]*)\]", getprop))
+@@ -105,8 +123,11 @@ def build_dtb(vb_dtb, dtbo_path, idx, getprop):
+                  "factory_mode=0", "consoleblank=0",
+                  # bring-up: log everything, uncompressed, into the ramoops area
+                  "ignore_loglevel", "pstore.compress=none"]
++        have = {w.split("=")[0] for w in args.split()}
++        extra = [w for w in extra if w.split("=")[0] not in have]   # no duplicates
+         subprocess.run(["fdtput", "-t", "s", m, "/chosen", "bootargs",
+-                        args + " " + " ".join(extra)], check=True)
++                        (args + " " + " ".join(extra)).strip()], check=True)
++        check_ramoops_overlap(m)      # before adding our own node
+         add_ramoops(m)
+         return open(m, "rb").read()
+ 
+@@ -115,6 +136,8 @@ def main():
+     for n in ("boot", "vendor-boot", "init-boot", "dtbo", "getprop", "out"):
+         a.add_argument("--" + n, required=True)
+     a.add_argument("--dtbo-idx", type=int, help="default: ro.boot.dtbo_idx from getprop")
++    a.add_argument("--live-dtb", help="device tree dumped from stock Android "
++                   "(/sys/firmware/fdt); used instead of vendor_boot base + dtbo")
+     o = a.parse_args()
+     missing = [f"--{n.replace('_','-')} {getattr(o, n)}" for n in
+                ("boot", "vendor_boot", "init_boot", "dtbo", "getprop")
+@@ -129,11 +152,11 @@ def main():
+     os.makedirs(o.out, exist_ok=True)
+     k = kernel(o.boot)
+     rd = vr + init_boot_ramdisk(o.init_boot) + bootconfig(vtext, gp)
+-    dtb = build_dtb(vdtb, o.dtbo, idx, gp)
++    dtb = build_dtb(vdtb, o.dtbo, idx, gp, o.live_dtb)
+     for name, blob in (("Image", k), ("ramdisk", rd), ("dtb", dtb)):
+         open(os.path.join(o.out, name), "wb").write(blob)
+         print(f"{name:8s} {len(blob):>10d} bytes")
+-    print(f"dtb = vendor_boot base + dtbo entry {idx}")
++    print("dtb = live dtb " + o.live_dtb if o.live_dtb else f"dtb = vendor_boot base + dtbo entry {idx}")
+ 
+ if __name__ == "__main__":
+     main()
+-- 
+2.43.0
+

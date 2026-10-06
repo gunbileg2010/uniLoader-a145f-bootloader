@@ -1,0 +1,124 @@
+02039000-02068fff : 11900000.acpm_ipc acpm_ipc
+10050000-100500ff : 10050000.watchdog_cl0 watchdog_cl0@10050000
+10060000-100600ff : 10060000.watchdog_cl1 watchdog_cl1@10060000
+10440000-10440fff : exynos-bts bts_drex0
+10450000-104500ff : exynos-bts bts_drex0_pf
+10540000-10540fff : exynos-bts bts_drex1
+10550000-105500ff : exynos-bts bts_drex1_pf
+10cf0000-10cf00ff : 11a00000.contexthub dumpgpr
+10d20000-10d2000f : 11a00000.contexthub chub_baaw
+10e00000-10e3ffff : 11a00000.contexthub sram
+11500000-11504fff : 11500000.mali
+11830000-11830fff : 11830000.acpm timer_apm
+11860000-1186ffff : 11860000.exynos-pmu pmu_alive
+11900000-11900fff : 11900000.acpm_ipc acpm_ipc
+11920000-1192017f : 11920000.cp_mailbox cp_mailbox
+11980000-1198017f : 11980000.gnss_mailbox gnss_mailbox
+11a00000-11a001ff : 11a00000.contexthub mailbox
+11c22000-11c22003 : 11c22000.usi usi@11C22000
+11c40000-11c400ff : 11c40000.adc adc@11C40000
+11d00000-11d000ff : 11d00000.spi spi@11D00000
+120c0000-120c0fff : pdma0@120C0000
+  120c0000-120c0fff : 120c0000.pdma0 pdma0@120C0000
+12100000-12101fff : 12100000.dwmmc0 dw_mmc
+12400000-124000ff : exynos-bts bts_aud
+12430000-124300ff : exynos-bts bts_corex
+12450000-124500ff : exynos-bts bts_dpu
+12460000-124600ff : exynos-bts bts_hsi
+12470000-124700ff : exynos-bts bts_g3d
+12480000-124800ff : exynos-bts bts_gnss
+12490000-124900ff : exynos-bts bts_is0
+124a0000-124a00ff : exynos-bts bts_is1
+124b0000-124b00ff : exynos-bts bts_mfcmscl
+124c0000-124c00ff : exynos-bts bts_modem0
+124d0000-124d00ff : exynos-bts bts_modem1
+124e0000-124e00ff : exynos-bts bts_wlbt
+124f2000-124f20ff : exynos-bts bts_rt_mem0
+12502000-125020ff : exynos-bts bts_rt_mem1
+12512000-125120ff : exynos-bts bts_nrt_mem0
+12522000-125220ff : exynos-bts bts_nrt_mem1
+12532000-125320ff : exynos-bts bts_cp_mem0
+12542000-125420ff : exynos-bts bts_cp_mem1
+12c50000-12c58fff : 12c50000.sysmmu sysmmu@12C50000
+12c80000-12c8ffff : 12c80000.MFC-0
+12c90000-12c90fff : 12c90000.smfc smfc@12C90000
+12cb0000-12cb2fff : 12cb0000.scaler scaler@12CB0000
+13054000-13054fff : 130b4000.dpp dpp@0x130B4000
+13060000-1306ffff : 13060000.decon_f decon_f@0x13060000
+13070000-130701ff : 13070000.dsim dsim@0x13070000
+13080000-13082fff : 13070000.dsim dsim@0x13070000
+130b0000-130b010f : 130b4000.dpp dpp@0x130B4000
+130b1000-130b1fff : 130b1000.dpp dpp@0x130B1000
+130b2000-130b2fff : 130b2000.dpp dpp@0x130B2000
+130b3000-130b3fff : 130b3000.dpp dpp@0x130B3000
+130b4000-130b4fff : 130b4000.dpp dpp@0x130B4000
+130c0000-130c8fff : 130c0000.sysmmu sysmmu@130C0000
+13500000-13501fff : 13500000.dwmmc2 dw_mmc
+135d0000-135d01ff : 135d0000.phy phy@135d0000
+1360c100-1360ffff : 13600000.dwc3 dwc3
+13820000-138200ff : 13820000.uart
+13830000-138300ff : 13830000.i2c i2c@13830000
+13840000-138400ff : 13840000.i2c i2c@13840000
+13850000-138500ff : 13850000.i2c i2c@13850000
+13860000-138600ff : 13860000.i2c i2c@13860000
+13870000-138700ff : 13870000.i2c i2c@13870000
+138a0000-138a0fff : 138a0000.hsi2c hsi2c@138A0000
+138b0000-138b0fff : 138b0000.hsi2c hsi2c@138B0000
+138c0000-138c0fff : 138c0000.hsi2c hsi2c@138C0000
+13970000-13970fff : 13970000.pwm pwm@13970000
+14490000-1449ffff : 14490000.dphy_m0s4s4s2_csi0 dphy_m0s4s4s2_csi0@14400000
+144a0000-144affff : 144a0000.dphy_m0s4s4s2_csi1 dphy_m0s4s4s2_csi1@14410000
+144b0000-144bffff : 144b0000.dphy_m0s4s4s2_csi2 dphy_m0s4s4s2_csi2@14420000
+14550000-14558fff : 14550000.sysmmu sysmmu@14550000
+14570000-14578fff : 14570000.sysmmu sysmmu@14570000
+14850000-14858fff : 14850000.sysmmu sysmmu@14850000
+14a10000-14a1ffff : sysreg
+14a50000-14a5ffff : sfr
+14ac0000-14ac1fff : 14ac0000.fm fm@14AC0000
+14ae0000-14aeffff : timer
+14af1000-14af1fff : gicd
+14af2000-14af3003 : gicc
+14b00000-14b2cfff : sram
+80000000-911fffff : System RAM
+  80120000-8229ffff : Kernel code
+  822a0000-8241ffff : reserved
+  82420000-8283ffff : Kernel data
+  84080000-85219fff : reserved
+  87fff000-87ffffff : reserved
+  8a080000-8a0d0fff : reserved
+  8ffff000-9004afff : reserved
+91200000-913fffff : reserved
+91400000-bb9fffff : System RAM
+c0000000-dfffffff : System RAM
+  c3000000-c307ffff : reserved
+  d0000000-d87fffff : reserved
+  db900000-dbcfffff : reserved
+  dc000000-dfffffff : reserved
+e0d00000-effeefff : System RAM
+  e1900000-e3c9ffff : reserved
+  e7ffe000-e7ffffff : reserved
+  ec400000-ee5fffff : reserved
+  ef000000-efbfffff : reserved
+effef000-efffefff : reserved
+effff000-efffffff : System RAM
+f0000000-f000ffff : reserved
+f0010000-fcffefff : System RAM
+  f0010000-f040ffff : reserved
+  f0810000-f08b5fff : reserved
+  fa000000-facfffff : reserved
+  fc000000-fc0fffff : reserved
+fcfff000-fcffffff : reserved
+fd000000-ffffffff : System RAM
+  ff000000-ffffffff : reserved
+880000000-8ffffffff : System RAM
+  8a2400000-8a27fffff : reserved
+  8ebaf8000-8f01fffff : reserved
+  8f0220000-8f029ffff : reserved
+  8f02a0000-8f02a0fff : reserved
+  8f02a3000-8f02a3fff : reserved
+  8f02a4000-8f02a4fff : reserved
+  8f02a5000-8f02b4fff : reserved
+  8f02b5000-8f02b5fff : reserved
+  8f02b6000-8f02b6fff : reserved
+  8f02b7000-8f02d8fff : reserved
+  8f02d9000-8ffffffff : reserved
