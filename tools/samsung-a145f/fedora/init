@@ -1,0 +1,99 @@
+#!/bin/busybox sh
+# Minimal initramfs for booting Fedora from an SD card on the A145F vendor kernel.
+#
+# Everything is logged to /dev/kmsg, so it ends up in the ramoops console and
+# uniLoader shows it after the next (warm) reboot. There is no other output:
+# this kernel has no text console on the screen.
+#
+# SAFE BY DEFAULT: unless the Fedora root contains a file named .fedora-go,
+# this is a dry run. It finds the root, saves a log on it, and reboots.
+#   touch /path/to/sd-root/.fedora-go     # then it really boots Fedora
+
+/bin/busybox mount -t devtmpfs devtmpfs /dev
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sysfs /sys
+exec </dev/null >/dev/kmsg 2>&1
+/bin/busybox --install -s /bin
+export PATH=/bin:/sbin
+
+say() { echo "fedora-initramfs: $*"; }
+
+# 'b' = plain reboot (RAM and the log survive). 'c' = crash, only as a fallback.
+reboot_in() {
+	say "rebooting in $1 s"
+	sleep "$1"
+	echo b > /proc/sysrq-trigger
+	sleep 5
+	echo c > /proc/sysrq-trigger
+}
+
+show_parts() {
+	while read -r l; do
+		[ -n "$l" ] && say "partitions: $l"
+	done < /proc/partitions
+}
+
+say "start"
+
+# Load the vendor modules in the same order Samsung's first stage does.
+# The SD controller (dw_mmc*) and the clock/PMU drivers it needs are modules.
+ok=0
+bad=0
+while read -r m; do
+	m=${m##*/}
+	[ -n "$m" ] || continue
+	if insmod "/lib/modules/$m" 2>/dev/null; then
+		ok=$((ok + 1))
+	else
+		bad=$((bad + 1))
+		say "insmod $m failed"
+	fi
+done < /lib/modules/modules.load
+say "modules: $ok loaded, $bad failed"
+
+# Look for a partition holding a Fedora root. mmcblk0 is the internal eMMC
+# (Android), so it is skipped on purpose.
+find_root() {
+	for d in /dev/mmcblk[1-9]p[0-9]* /dev/sd[a-z][0-9]*; do
+		[ -b "$d" ] || continue
+		if ! err=$(mount -t ext4 -o rw "$d" /mnt 2>&1); then
+			say "mount $d: $err"
+			continue
+		fi
+		if [ -x /mnt/usr/lib/systemd/systemd ]; then
+			say "root is $d"
+			return 0
+		fi
+		say "$d mounted but has no /usr/lib/systemd/systemd"
+		umount /mnt
+	done
+	return 1
+}
+
+i=0
+while ! find_root; do
+	i=$((i + 1))
+	[ $((i % 10)) -eq 0 ] && { say "waiting ($i s)"; show_parts; }
+	[ "$i" -ge 60 ] && break
+	sleep 1
+done
+
+if [ -x /mnt/usr/lib/systemd/systemd ]; then
+	mkdir -p /mnt/root 2>/dev/null
+	dmesg > /mnt/root/initramfs-dmesg.txt 2>/dev/null
+	if [ ! -e /mnt/.fedora-go ]; then
+		say "dry run (no /.fedora-go on the root): log saved to /root/initramfs-dmesg.txt"
+		sync
+		umount /mnt
+		reboot_in 15
+	fi
+	say "switching root"
+	mount --move /dev /mnt/dev
+	mount --move /proc /mnt/proc
+	mount --move /sys /mnt/sys
+	exec switch_root /mnt /usr/lib/systemd/systemd
+fi
+
+say "no Fedora root found"
+show_parts
+reboot_in 20
