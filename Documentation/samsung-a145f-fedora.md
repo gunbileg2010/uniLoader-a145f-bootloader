@@ -53,20 +53,30 @@ heimdall flash --BOOT boot_fedora.img --no-reboot
 ## 2. Prepare the SD card
 
 The root must be ext4 (not exFAT) and contain `/usr/lib/systemd/systemd`.
+**Formatting erases the card: copy anything you need off it first.**
 Untested recipe, from an Ubuntu PC:
 
 ```bash
-sudo apt install qemu-user-static podman
-sudo mkfs.ext4 -L fedora /dev/sdX1          # CHECK sdX with lsblk first
-sudo mount /dev/sdX1 /mnt/sd
-sudo podman run --rm --platform linux/arm64 -v /mnt/sd:/sysroot fedora:latest \
-  dnf -y --installroot=/sysroot --releasever=42 --forcearch=aarch64 \
-  --use-host-config install systemd passwd dnf iproute openssh-server
-sudo chroot /mnt/sd /bin/sh -c 'echo root:changeme | chpasswd'   # needs qemu-user-static
+sudo apt install qemu-user-static podman parted e2fsprogs
+lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS     # find the SD card, e.g. /dev/sdX
+sudo umount /dev/sdX* 2>/dev/null
+sudo parted -s /dev/sdX mklabel msdos mkpart primary ext4 1MiB 100%
+sudo mkfs.ext4 -L fedora /dev/sdX1             # double-check sdX is the SD card
+sudo mkdir -p /mnt/sd && sudo mount /dev/sdX1 /mnt/sd
+
+sudo podman run --rm --privileged --platform linux/arm64 \
+  -v /mnt/sd:/sysroot docker.io/library/fedora:latest sh -c '
+  dnf -y --installroot=/sysroot --releasever=$(rpm -E %fedora) --forcearch=aarch64 \
+      --use-host-config install systemd passwd bash coreutils util-linux iproute \
+      NetworkManager openssh-server &&
+  echo "root:changeme" | chroot /sysroot chpasswd &&
+  mkdir -p /sysroot/var/log/journal'
+sync && sudo umount /mnt/sd
 ```
 
-Use whatever method you like, as long as the result is a bootable Fedora root.
-Plain systemd logging: the build already adds `systemd.log_target=kmsg`.
+If dnf says `--use-host-config` is an unknown option (older dnf4), delete that
+flag and run again. Change the root password after the first successful boot.
+Any other way of producing a bootable Fedora aarch64 root works too.
 
 ## 3. First run is a dry run
 
