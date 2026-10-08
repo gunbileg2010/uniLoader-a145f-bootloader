@@ -57,7 +57,7 @@ The root must be ext4 (not exFAT) and contain `/usr/lib/systemd/systemd`.
 Untested recipe, from an Ubuntu PC:
 
 ```bash
-sudo apt install qemu-user-static podman parted e2fsprogs
+sudo apt install qemu-user-binfmt podman parted e2fsprogs   # older Ubuntu: qemu-user-static
 lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS     # find the SD card, e.g. /dev/sdX
 sudo umount /dev/sdX* 2>/dev/null
 sudo parted -s /dev/sdX mklabel msdos mkpart primary ext4 1MiB 100%
