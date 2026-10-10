@@ -114,3 +114,26 @@ messages are visible only after a reboot, in the kernel log, plus
   on the SD root (`mkdir -p /var/log/journal`) is the next debugging aid.
 * The SD card must power up from the vendor kernel. If `mmcblk1` never shows
   up, check the failed-module list for dw_mmc / PMIC drivers.
+
+
+## Reading the log over USB
+
+The initramfs turns the phone into a USB serial device (CDC ACM) and streams
+the kernel log to it, so you do not need the screen. This is best effort: if
+the USB controller never switches to device mode, the log line
+`fedora-initramfs: usb: ...` says why (see it on the next uniLoader log screen).
+
+On the PC, with the phone connected by USB while it boots:
+
+    sudo dmesg -w                       # a new /dev/ttyACM0 should appear
+    sudo cat /dev/ttyACM0 | tee phone.log
+    # or: sudo screen /dev/ttyACM0 115200
+
+The dry run waits 45 s before rebooting so there is time to connect. To get a
+login on that same port once Fedora is running, enable the getty on the SD
+card (the gadget survives switch_root):
+
+    sudo ln -s /usr/lib/systemd/system/serial-getty@.service \
+      /mnt/sd/etc/systemd/system/getty.target.wants/serial-getty@ttyGS0.service
+
+Then log in as `root` on `/dev/ttyACM0` (115200 baud).

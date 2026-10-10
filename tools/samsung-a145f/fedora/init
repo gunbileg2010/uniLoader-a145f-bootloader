@@ -62,6 +62,40 @@ while read -r m; do
 done < "$L"
 say "modules: $ok loaded, $bad failed"
 
+# USB serial gadget: the phone shows up on the PC as /dev/ttyACM0 and streams
+# the kernel log (and keeps working after switch_root, where
+# serial-getty@ttyGS0 gives a login). Best effort: failures are only logged.
+setup_usb() {
+	mount -t configfs none /sys/kernel/config 2>/dev/null
+	G=/sys/kernel/config/usb_gadget/a145f
+	if ! mkdir "$G" 2>/dev/null; then
+		say "usb: no configfs gadget support"
+		return 1
+	fi
+	echo 0x1d6b > "$G/idVendor"
+	echo 0x0104 > "$G/idProduct"
+	mkdir -p "$G/strings/0x409" "$G/configs/c.1/strings/0x409" "$G/functions/acm.usb0"
+	echo a145f > "$G/strings/0x409/serialnumber"
+	echo uniLoader > "$G/strings/0x409/manufacturer"
+	echo "A145F Fedora log" > "$G/strings/0x409/product"
+	echo serial > "$G/configs/c.1/strings/0x409/configuration"
+	ln -s "$G/functions/acm.usb0" "$G/configs/c.1/" 2>/dev/null
+	u=$(ls /sys/class/udc 2>/dev/null | head -n 1)
+	if [ -z "$u" ]; then
+		say "usb: no UDC (controller not in device mode)"
+		return 1
+	fi
+	if ! echo "$u" > "$G/UDC" 2>/dev/null; then
+		say "usb: could not bind UDC $u"
+		return 1
+	fi
+	say "usb: gadget up on $u, serial port /dev/ttyGS0"
+	( cat /dev/kmsg > /dev/ttyGS0 ) &
+	return 0
+}
+
+setup_usb
+
 # Look for a partition holding a Fedora root. mmcblk0 is the internal eMMC
 # (Android), so it is skipped on purpose.
 find_root() {
@@ -96,7 +130,7 @@ if [ -x /mnt/usr/lib/systemd/systemd ]; then
 		say "dry run (no /.fedora-go on the root): log saved to /root/initramfs-dmesg.txt"
 		sync
 		umount /mnt
-		reboot_in 15
+		reboot_in 45
 	fi
 	say "switching root"
 	kill $WD 2>/dev/null
