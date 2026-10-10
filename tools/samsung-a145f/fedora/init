@@ -35,9 +35,9 @@ show_parts() {
 
 say "start"
 
-# Watchdog: if anything below hangs, reboot after 120 s so the log survives
+# Watchdog: if anything below hangs, reboot after 240 s so the log survives
 # in RAM (a manual power cycle garbles it). Killed before switch_root.
-( sleep 120; echo "fedora-initramfs: WATCHDOG, hang detected, rebooting" > /dev/kmsg; sleep 1; echo b > /proc/sysrq-trigger ) &
+( sleep 240; echo "fedora-initramfs: WATCHDOG, hang detected, rebooting" > /dev/kmsg; sleep 1; echo b > /proc/sysrq-trigger ) &
 WD=$!
 
 # Load vendor modules. modules.min (made by build_fedora_ramdisk.sh) holds only
@@ -80,16 +80,35 @@ setup_usb() {
 	echo "A145F Fedora log" > "$G/strings/0x409/product"
 	echo serial > "$G/configs/c.1/strings/0x409/configuration"
 	ln -s "$G/functions/acm.usb0" "$G/configs/c.1/" 2>/dev/null
-	u=$(ls /sys/class/udc 2>/dev/null | head -n 1)
+	# The UDC shows up once dwc3 has probed; give it a few seconds.
+	n=0
+	u=""
+	while [ -z "$u" ] && [ "$n" -lt 10 ]; do
+		u=$(ls /sys/class/udc 2>/dev/null | head -n 1)
+		[ -n "$u" ] || { n=$((n + 1)); sleep 1; }
+	done
+	say "usb: udc list: [$u]"
 	if [ -z "$u" ]; then
-		say "usb: no UDC (controller not in device mode)"
+		for l in $(dmesg | grep -i -E "dwc3|usb.*(phy|otg|gadget)|muic|usbpd|usb_notif" | tail -n 12 | tr ' ' '_'); do say "usb: dmesg $l"; done
 		return 1
 	fi
 	if ! echo "$u" > "$G/UDC" 2>/dev/null; then
 		say "usb: could not bind UDC $u"
 		return 1
 	fi
-	say "usb: gadget up on $u, serial port /dev/ttyGS0"
+	# Samsung's OTG state machine starts the gadget only when the cable-detect
+	# chain says VBUS is present. If that chain did not do it, force it.
+	for f in $(find /sys -name b_sess 2>/dev/null); do
+		say "usb: $f = $(cat "$f" 2>&1 | tr '\n' ' ')"
+		echo 1 > "$f" 2>/dev/null
+		sleep 1
+		say "usb: $f now $(cat "$f" 2>&1 | tr '\n' ' ')"
+	done
+	for f in $(find /sys -name state -path '*dwc3*' 2>/dev/null | head -n 3); do
+		say "usb: $f: $(cat "$f" 2>&1 | tr '\n' ' ')"
+	done
+	say "usb: udc state $(cat /sys/class/udc/$u/state 2>&1)"
+	say "usb: gadget bound to $u, serial port /dev/ttyGS0"
 	( cat /dev/kmsg > /dev/ttyGS0 ) &
 	return 0
 }
@@ -130,7 +149,7 @@ if [ -x /mnt/usr/lib/systemd/systemd ]; then
 		say "dry run (no /.fedora-go on the root): log saved to /root/initramfs-dmesg.txt"
 		sync
 		umount /mnt
-		reboot_in 45
+		reboot_in 90
 	fi
 	say "switching root"
 	kill $WD 2>/dev/null

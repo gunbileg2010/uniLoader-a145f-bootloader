@@ -48,7 +48,13 @@ def add(m):
     for x in dep.get(m, []): add(x)
 for m in ("dw_mmc-exynos-sec.ko", "dw_mmc-exynos-fmp.ko", "dw_mmc-srpmb.ko", "dw_mmc-pltfm.ko",
           "dw_mmc.ko", "s2mpu12-regulator.ko", "s2mpu12_mfd.ko", "pinctrl-samsung-core.ko",
-          "clk_exynos.ko", "i2c-exynos5.ko", "exynos-pmu.ko", "exynos-pd.ko", "exynos-chipid_v2.ko"):
+          "clk_exynos.ko", "i2c-exynos5.ko", "exynos-pmu.ko", "exynos-pd.ko", "exynos-chipid_v2.ko",
+          # USB device mode: Samsung's OTG state machine only starts the gadget when
+          # the cable-detect chain (MUIC / USB-PD / notifier) reports VBUS.
+          "dwc3-exynos-usb.ko", "phy-exynos-usbdrd-super.ko", "usb_notifier.ko", "usb_notify_layer.ko",
+          "vbus_notifier.ko", "usb_typec_manager.ko", "if_cb_manager.ko", "mfd_s2mu106.ko",
+          "muic_platform.ko", "common_muic.ko", "muic_s2mu106.ko", "s2mu106-usbpd.ko",
+          "pdic_notifier_module.ko", "s2m_pdic_notifier_module.ko", "switch_class.ko"):
     add(m)
 open(out, "w").write("\n".join(m for m in order if m in need) + "\n")
 print("modules.min:", len([m for m in order if m in need]), "modules")
