@@ -18,6 +18,37 @@ export PATH=/bin:/sbin
 
 say() { echo "fedora-initramfs: $*"; }
 
+# --- on-screen progress marks ------------------------------------------------
+# The kernel has no text console, no RAM log survives a forced reset, and USB
+# may not come up, so draw progress straight into the framebuffer that uniLoader
+# set up (0xfa000000, 1080x2408 ARGB8888, 4096 B = 1 page ~ 1 pixel row).
+# Needs /dev/mem; failures are ignored. Bands (top to bottom of the screen):
+#   green bands near the top   stage reached (1 started, 2 modules loaded, 3 usb tried,
+#                              4 root found, 5 about to switch_root / reboot)
+#   white ticks, from ~row 800 one per module loaded; a fat red tick = insmod failed
+#   red band at row ~650       watchdog fired (a hang)
+FBPAGE=1024000
+mkpat() { # name, 4 bytes as octal escapes (B G R A)
+	i=0
+	while [ $i -lt 1024 ]; do printf "$2"; i=$((i + 1)); done > "/$1"
+}
+mkpat white '\377\377\377\377'
+mkpat red '\000\000\377\377'
+mkpat green '\000\377\000\377'
+mk() { # colour, first page, pages
+	dd if="/$1" of=/dev/mem bs=4096 seek=$((FBPAGE + $2)) count=$3 2>/dev/null
+}
+stage=0
+mark_stage() { # draws one more green band
+	stage=$((stage + 1))
+	mk green $((60 + stage * 60)) 30
+}
+tick=0
+mark_mod() { # $1 = ok|bad
+	tick=$((tick + 1))
+	if [ "$1" = ok ]; then mk white $((800 + tick * 5)) 2; else mk red $((800 + tick * 5)) 4; fi
+}
+
 # 'b' = plain reboot (RAM and the log survive). 'c' = crash, only as a fallback.
 reboot_in() {
 	say "rebooting in $1 s"
@@ -34,10 +65,11 @@ show_parts() {
 }
 
 say "start"
+mark_stage
 
-# Watchdog: if anything below hangs, reboot after 240 s so the log survives
+# Watchdog: if anything below hangs, reboot after 150 s so the log survives
 # in RAM (a manual power cycle garbles it). Killed before switch_root.
-( sleep 240; echo "fedora-initramfs: WATCHDOG, hang detected, rebooting" > /dev/kmsg; sleep 1; echo b > /proc/sysrq-trigger ) &
+( sleep 150; dd if=/red of=/dev/mem bs=4096 seek=$((FBPAGE + 650)) count=40 2>/dev/null; echo "fedora-initramfs: WATCHDOG, hang detected, rebooting" > /dev/kmsg; sleep 1; echo b > /proc/sysrq-trigger ) &
 WD=$!
 
 # Load vendor modules. modules.min (made by build_fedora_ramdisk.sh) holds only
@@ -55,12 +87,15 @@ while read -r m; do
 	say "insmod $m"
 	if insmod "/lib/modules/$m" 2>/dev/null; then
 		ok=$((ok + 1))
+		mark_mod ok
 	else
 		bad=$((bad + 1))
 		say "insmod $m failed"
+		mark_mod bad
 	fi
 done < "$L"
 say "modules: $ok loaded, $bad failed"
+mark_stage
 
 # USB serial gadget: the phone shows up on the PC as /dev/ttyACM0 and streams
 # the kernel log (and keeps working after switch_root, where
@@ -114,6 +149,7 @@ setup_usb() {
 }
 
 setup_usb
+mark_stage
 
 # Look for a partition holding a Fedora root. mmcblk0 is the internal eMMC
 # (Android), so it is skipped on purpose.
@@ -143,6 +179,7 @@ while ! find_root; do
 done
 
 if [ -x /mnt/usr/lib/systemd/systemd ]; then
+	mark_stage
 	mkdir -p /mnt/root 2>/dev/null
 	dmesg > /mnt/root/initramfs-dmesg.txt 2>/dev/null
 	if [ ! -e /mnt/.fedora-go ]; then
@@ -151,6 +188,7 @@ if [ -x /mnt/usr/lib/systemd/systemd ]; then
 		umount /mnt
 		reboot_in 90
 	fi
+	mark_stage
 	say "switching root"
 	kill $WD 2>/dev/null
 	mount --move /dev /mnt/dev
@@ -160,5 +198,6 @@ if [ -x /mnt/usr/lib/systemd/systemd ]; then
 fi
 
 say "no Fedora root found"
+mk red 500 40
 show_parts
 reboot_in 20
