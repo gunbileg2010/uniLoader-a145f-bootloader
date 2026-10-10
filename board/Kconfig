@@ -200,6 +200,24 @@ menu "Device Support"
 		  the ramoops area and the bootloader's log, then waits before
 		  booting again. Costs about 50 s per boot when a log is present.
 
+	config A145F_SPLASH
+		bool "A145F: draw a splash picture at boot"
+		default y
+		depends on SAMSUNG_A145F
+		help
+		  Draws the embedded picture (board/samsung/a145f-splash.h, made by
+		  tools/samsung-a145f/make_splash.py) on the framebuffer before the
+		  kernel is started.
+
+	config A145F_SPLASH_HOLD
+		int "A145F: seconds to keep the splash before booting"
+		default 2
+		range 0 30
+		depends on A145F_SPLASH && !A145F_SHOW_PREV_LOG
+		help
+		  Only used when the debug log screens are off; with them on, their
+		  own wait keeps the splash visible.
+
 	config SAMSUNG_A21S
 		bool "Support for Samsung Galaxy A21S"
 		default n

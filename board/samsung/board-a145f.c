@@ -31,6 +31,57 @@ static const struct device a145f_devices[] = {
 	{ "simplefb", &a145f_fb, "fb" },
 };
 
+/* Busy-wait on the ARM generic timer (the system counter keeps running). */
+static void __attribute__((unused)) delay_seconds(unsigned int s)
+{
+	unsigned long freq, start, now;
+
+	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
+	if (!freq)
+		freq = 26000000UL;	/* Exynos 850 system counter */
+	__asm__ volatile("mrs %0, cntpct_el0" : "=r"(start));
+	do {
+		__asm__ volatile("mrs %0, cntpct_el0" : "=r"(now));
+	} while (now - start < freq * s);
+}
+
+#ifdef CONFIG_A145F_SPLASH
+#include "a145f-splash.h"
+
+/*
+ * Draw the embedded splash picture (palette + RLE, see
+ * tools/samsung-a145f/make_splash.py). Centred when nothing else is printed,
+ * at the bottom when the debug log screens use the top of the display.
+ */
+static void a145f_draw_splash(void)
+{
+	volatile unsigned int *fb = (volatile unsigned int *)a145f_fb.address;
+	unsigned long total = (unsigned long)A145F_SPLASH_WIDTH * A145F_SPLASH_HEIGHT;
+	unsigned long n = 0, i = 0;
+	int x0 = (a145f_fb.width - A145F_SPLASH_WIDTH) / 2;
+	int y0 = (a145f_fb.height - A145F_SPLASH_HEIGHT) / 2;
+
+#ifdef CONFIG_A145F_SHOW_PREV_LOG
+	y0 = a145f_fb.height - A145F_SPLASH_HEIGHT - 60;
+#endif
+	if (x0 < 0 || y0 < 0)
+		return;
+	while (n < total && i + 1 < A145F_SPLASH_RLE_LEN) {
+		unsigned int run = a145f_splash_rle[i];
+		unsigned int c = a145f_splash_pal[a145f_splash_rle[i + 1]];
+
+		i += 2;
+		while (run-- && n < total) {
+			int x = x0 + (int)(n % A145F_SPLASH_WIDTH);
+			int y = y0 + (int)(n / A145F_SPLASH_WIDTH);
+
+			fb[(unsigned long)y * a145f_fb.width + x] = c;
+			n++;
+		}
+	}
+}
+#endif
+
 #ifdef CONFIG_A145F_SHOW_PREV_LOG
 /*
  * Bring-up aid, shown on screen before booting again after a failed boot.
@@ -68,19 +119,6 @@ static inline unsigned char ring_at(const struct ring *r, unsigned long i)
 	unsigned long k = r->off + i;
 
 	return r->p[k >= r->bufsz ? k % r->bufsz : k];
-}
-
-static void delay_seconds(unsigned int s)
-{
-	unsigned long freq, start, now;
-
-	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
-	if (!freq)
-		freq = 26000000UL;	/* Exynos 850 system counter */
-	__asm__ volatile("mrs %0, cntpct_el0" : "=r"(start));
-	do {
-		__asm__ volatile("mrs %0, cntpct_el0" : "=r"(now));
-	} while (now - start < freq * s);
 }
 
 /* Print the last SHOW_LINES lines of a ring, long lines truncated. */
@@ -305,7 +343,7 @@ static void show_bootloader_log(void)
 	ring_tail(&r);
 }
 
-static int a145f_late_init(void)
+static void a145f_show_debug(void)
 {
 	unsigned long el, sctlr;
 
@@ -324,6 +362,21 @@ static int a145f_late_init(void)
 	show_bootloader_log();
 	printk(KERN_INFO, "--- continuing in 10s ---\n");
 	delay_seconds(10);
+}
+#endif
+
+#if defined(CONFIG_A145F_SPLASH) || defined(CONFIG_A145F_SHOW_PREV_LOG)
+static int a145f_late_init(void)
+{
+#ifdef CONFIG_A145F_SPLASH
+	a145f_draw_splash();
+#ifndef CONFIG_A145F_SHOW_PREV_LOG
+	delay_seconds(CONFIG_A145F_SPLASH_HOLD);
+#endif
+#endif
+#ifdef CONFIG_A145F_SHOW_PREV_LOG
+	a145f_show_debug();
+#endif
 	return 0;
 }
 #endif
@@ -332,7 +385,7 @@ struct board_data board_ops = {
 	.name = "samsung-a145f",
 	.ops = {
 		.early_init = a145f_init,
-#ifdef CONFIG_A145F_SHOW_PREV_LOG
+#if defined(CONFIG_A145F_SPLASH) || defined(CONFIG_A145F_SHOW_PREV_LOG)
 		.late_init = a145f_late_init,
 #endif
 	},
