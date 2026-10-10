@@ -3,7 +3,7 @@
 # Run from anywhere; it cd's to the uniLoader repo root.
 #
 #   B=...        a145f backup dir with partitions/ and info/
-#                (default ~/Downloads/uniLoader-a145f-bootloader/a145f-backup)
+#                (default ./a145f-backup in the repo, then ~/Downloads/uniLoader-a145f-bootloader/a145f-backup)
 #   FEDORA=1     also build the Fedora initramfs (needs RD_ALL and BUSYBOX,
 #                see Documentation/samsung-a145f-fedora.md)
 #   SKIP_BLOBS=1 reuse blob/ from the last run instead of rebuilding it
@@ -15,7 +15,8 @@ cd "$(dirname "$0")/../.."
 MODE=fast
 CFG=a145f_${MODE}_defconfig
 OUT=boot_a145f_${MODE}.img
-B=${B:-$HOME/Downloads/uniLoader-a145f-bootloader/a145f-backup}
+B=${B:-$PWD/a145f-backup}
+[ -f "$B/partitions/boot.img" ] || B=$HOME/Downloads/uniLoader-a145f-bootloader/a145f-backup
 die() { echo "error: $*" >&2; exit 1; }
 
 for t in aarch64-linux-gnu-gcc python3 fdtput fdtoverlay; do
