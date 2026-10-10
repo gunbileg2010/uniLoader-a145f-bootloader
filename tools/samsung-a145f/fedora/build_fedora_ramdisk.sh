@@ -30,6 +30,30 @@ trap 'rm -rf "$T"' EXIT
 mkdir -p "$T"/{bin,dev,proc,sys,mnt,lib/modules}
 cp "$RD_ALL"/lib/modules/* "$T/lib/modules/"
 cp "$BUSYBOX" "$T/bin/busybox"
+# modules.min: the SD-card subset of modules.load (dependency closure, same
+# order). FULL_MODULES=1 skips it and loads all of modules.load.
+if [ "${FULL_MODULES:-0}" != 1 ]; then
+	python3 - "$RD_ALL/lib/modules" "$T/lib/modules/modules.min" <<'PY'
+import sys, os
+d, out = sys.argv[1:3]
+dep = {}
+for l in open(os.path.join(d, "modules.dep")):
+    k, _, v = l.partition(":")
+    dep[os.path.basename(k.strip())] = [os.path.basename(x) for x in v.split()]
+order = [os.path.basename(l.strip()) for l in open(os.path.join(d, "modules.load")) if l.strip()]
+need = set()
+def add(m):
+    if m in need: return
+    need.add(m)
+    for x in dep.get(m, []): add(x)
+for m in ("dw_mmc-exynos-sec.ko", "dw_mmc-exynos-fmp.ko", "dw_mmc-srpmb.ko", "dw_mmc-pltfm.ko",
+          "dw_mmc.ko", "s2mpu12-regulator.ko", "s2mpu12_mfd.ko", "pinctrl-samsung-core.ko",
+          "clk_exynos.ko", "i2c-exynos5.ko", "exynos-pmu.ko", "exynos-pd.ko", "exynos-chipid_v2.ko"):
+    add(m)
+open(out, "w").write("\n".join(m for m in order if m in need) + "\n")
+print("modules.min:", len([m for m in order if m in need]), "modules")
+PY
+fi
 install -m 755 "$HERE/init" "$T/init"
 
 # Same format as the stock ramdisk (legacy lz4), which the kernel already accepts.
