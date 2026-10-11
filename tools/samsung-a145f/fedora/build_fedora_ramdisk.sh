@@ -30,6 +30,13 @@ trap 'rm -rf "$T"' EXIT
 mkdir -p "$T"/{bin,dev,proc,sys,mnt,lib/modules}
 cp "$RD_ALL"/lib/modules/* "$T/lib/modules/"
 cp "$BUSYBOX" "$T/bin/busybox"
+# download-mode reboot helper for the watchdog (needs aarch64-linux-gnu-gcc)
+if command -v aarch64-linux-gnu-gcc >/dev/null; then
+	aarch64-linux-gnu-gcc -static -Os -o "$T/bin/rebootdl" "$(dirname "$0")/rebootdl.c" \
+		|| echo "WARNING: rebootdl build failed, watchdog will do a plain reboot"
+else
+	echo "WARNING: aarch64-linux-gnu-gcc missing, watchdog will do a plain reboot"
+fi
 # modules.min: the SD-card subset of modules.load (dependency closure, same
 # order). FULL_MODULES=1 skips it and loads all of modules.load.
 if [ "${FULL_MODULES:-0}" != 1 ]; then

@@ -67,9 +67,10 @@ show_parts() {
 say "start"
 mark_stage
 
-# Watchdog: if anything below hangs, reboot after 150 s so the log survives
-# in RAM (a manual power cycle garbles it). Killed before switch_root.
-( sleep 150; dd if=/red of=/dev/mem bs=4096 seek=$((FBPAGE + 650)) count=40 2>/dev/null; echo "fedora-initramfs: WATCHDOG, hang detected, rebooting" > /dev/kmsg; sleep 1; echo b > /proc/sysrq-trigger ) &
+# Watchdog: if anything below hangs, after 180 s reboot into DOWNLOAD MODE
+# (so Heimdall can flash again without button combos). Falls back to a plain
+# reboot if the helper is missing. Killed before switch_root.
+( sleep 180; dd if=/red of=/dev/mem bs=4096 seek=$((FBPAGE + 650)) count=40 2>/dev/null; echo "fedora-initramfs: WATCHDOG, hang detected, rebooting to download mode" > /dev/kmsg; sleep 1; /bin/rebootdl download; sleep 3; echo b > /proc/sysrq-trigger ) &
 WD=$!
 
 # Load vendor modules. modules.min (made by build_fedora_ramdisk.sh) holds only
