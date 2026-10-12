@@ -152,6 +152,21 @@ setup_usb() {
 setup_usb
 mark_stage
 
+# Hardware self-test: runs once now, output goes to the console and to the USB
+# serial port; the laptop can re-run it (and the SD write test) by sending
+# "run" / "runw" to the serial port while the initramfs is still up.
+run_selftest() {
+	{ WRITE=$1 /bin/selftest.sh; } 2>&1 | tee /tmp/selftest.log > /dev/ttyGS0 2>/dev/null
+	cat /tmp/selftest.log > /dev/kmsg 2>/dev/null
+}
+[ -x /bin/selftest.sh ] && [ -c /dev/ttyGS0 ] && {
+	run_selftest 0
+	( while read -r cmd < /dev/ttyGS0; do
+		case "$cmd" in run*w) run_selftest 1;; run*) run_selftest 0;; esac
+	done ) &
+	ST=$!
+}
+
 # Look for a partition holding a Fedora root. mmcblk0 is the internal eMMC
 # (Android), so it is skipped on purpose.
 find_root() {
@@ -191,7 +206,7 @@ if [ -x /mnt/usr/lib/systemd/systemd ]; then
 	fi
 	mark_stage
 	say "switching root"
-	kill $WD 2>/dev/null
+	kill $WD $ST 2>/dev/null
 	mount --move /dev /mnt/dev
 	mount --move /proc /mnt/proc
 	mount --move /sys /mnt/sys

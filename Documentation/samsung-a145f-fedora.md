@@ -137,3 +137,20 @@ card (the gadget survives switch_root):
       /mnt/sd/etc/systemd/system/getty.target.wants/serial-getty@ttyGS0.service
 
 Then log in as `root` on `/dev/ttyACM0` (115200 baud).
+
+## Automated hardware self-test
+
+The debug initramfs runs `selftest.sh` right after the USB gadget comes up and
+streams `TEST <name> PASS|FAIL|SKIP <detail>` lines plus a `SUMMARY` to
+`/dev/ttyGS0`. It checks CPU (8x Cortex-A55, online, cpufreq, compute), RAM
+(MemTotal, 128 MiB tmpfs copy compare), eMMC and SD presence and read speed,
+USB UDC/serial/speed, and Mali/thermal/battery (SKIP when absent).
+
+On the laptop (cable in, phone booting):
+
+    sudo bash tools/samsung-a145f/a145f-test-host.sh            # wait for /dev/ttyACM*, run, report
+    sudo bash tools/samsung-a145f/a145f-test-host.sh /dev/ttyACM0 120 --rerun
+
+Exit code: 0 no FAIL, 1 a FAIL, 2 no result. A log `a145f-selftest-*.log` is
+written. Sending `runw` over the port also runs the SD write test (only on the
+SD root, never the eMMC).

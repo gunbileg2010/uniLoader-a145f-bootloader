@@ -68,6 +68,7 @@ print("modules.min:", len([m for m in order if m in need]), "modules")
 PY
 fi
 install -m 755 "$HERE/init" "$T/init"
+install -m 755 "$HERE/selftest.sh" "$T/bin/selftest.sh"
 
 # Same format as the stock ramdisk (legacy lz4), which the kernel already accepts.
 ( cd "$T" && find . | cpio -o -H newc -R 0:0 --quiet | lz4 -l -9 -c ) > "$OUT/ramdisk.new"
